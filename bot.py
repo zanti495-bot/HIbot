@@ -5,8 +5,8 @@ import json
 import traceback
 
 # Твои данные
-BOT_TOKEN = '8580142367:AAFovtoBDmPEEJ0xfIQj020pPxEBH1dkGlE'
-SUBGRAM_API_KEY = '14ddf3a8d58d6f5bf6f279da714277f43de44f2a23cde12fa9372b0ce2373368'
+BOT_TOKEN = '8539310713:AAHZm9V13F-rNyga2Jo5lV_VJYbwr9tMpiI'
+SUBGRAM_API_KEY = '48d15f529d10ac12165349a2c5325e06dec90cfed1b3a39466f80036c1671fe6'
 CHANNEL_ID = -1003013802890
 
 SUBGRAM_URL = 'https://api.subgram.org/get-sponsors'
@@ -80,14 +80,14 @@ def handle_join_request(join_request: ChatJoinRequest):
                     markup.add(InlineKeyboardButton(text, url=link))
             
             markup.add(InlineKeyboardButton(
-                "Проверить подписку ✅",
+                "Я ответил ✅",
                 callback_data=f"check_{user_id}"
             ))
             
             bot.send_message(
                 user_id,
-                "Для вступления в канал подпишитесь на эти каналы:\n\n"
-                "После подписки нажмите кнопку ниже — я проверю автоматически.",
+                "Чтобы получить рецепт, ответьте всего на пару вопросов!\n\n"
+                "После ответа нажмите кнопку ниже — я отправлю вам рецепт.",
                 reply_markup=markup
             )
             
