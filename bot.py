@@ -1,91 +1,87 @@
-import telebot
-from telebot.types import InlineKeyboardMarkup, InlineKeyboardButton, ChatJoinRequest
-import os
+import asyncio
+import logging
+from aiogram import Bot, Dispatcher, types
+from aiogram.filters import Command
+from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 from flyerapi import Flyer
+import os
 
 # ────────────────────────────────────────────────
-#                НАСТРОЙКИ
-# ────────────────────────────────────────────────
-
 BOT_TOKEN = os.getenv('BOT_TOKEN', '8539310713:AAHZm9V13F-rNyga2Jo5lV_VJYbwr9tMpiI')
 FLYER_KEY  = os.getenv('FLYER_KEY',  'FL-QimvUK-noxElI-hXeODH-EhLLMN')
 CHANNEL_ID = int(os.getenv('CHANNEL_ID', '-1003013802890'))
-
 # ────────────────────────────────────────────────
 
-bot = telebot.TeleBot(BOT_TOKEN)
+logging.basicConfig(level=logging.INFO)
+bot = Bot(token=BOT_TOKEN)
+dp = Dispatcher()
 flyer = Flyer(FLYER_KEY)
 
-def is_subscribed(user_id):
+async def is_subscribed(user_id: int) -> bool:
     try:
-        result = flyer.check(user_id)
-        print(f"[FLYER] user={user_id} → {result}")
+        result = await flyer.check(user_id)  # ← await здесь!
+        logging.info(f"[FLYER] user={user_id} → {result}")
         
-        # Возможные варианты возвращаемого значения
         if isinstance(result, bool):
             return result
         elif isinstance(result, dict):
-            return result.get('skip', False) or result.get('success', False) or result.get('subscribed', False)
-        else:
-            return False
+            return result.get('skip', False) or result.get('success', False)
+        return False
     except Exception as e:
-        print(f"[FLYER ERROR] {e}")
+        logging.error(f"[FLYER ERROR] {e}")
         return False
 
-
-def send_welcome_with_check(user_id, message_id=None):
-    if is_subscribed(user_id):
-        text = "Привет! Подписка проверена — добро пожаловать в канал 🎉"
+async def send_prompt(user_id: int, message_id: int | None = None):
+    if await is_subscribed(user_id):
+        text = "Привет! Подписка активна — добро пожаловать в канал 🎉"
         markup = None
     else:
-        text = "Привет! Чтобы попасть в канал, нужно подписаться на обязательные каналы.\n\nПосле подписки нажми кнопку ниже."
-        markup = InlineKeyboardMarkup(row_width=1)
-        markup.add(InlineKeyboardButton("Проверить подписку ✅", callback_data=f"check_{user_id}"))
+        text = "Привет! Чтобы присоединиться, подпишись на обязательные каналы.\nНажми ниже после подписки."
+        markup = InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="Проверить подписку ✅", callback_data=f"check_{user_id}")]
+        ])
     
     try:
         if message_id:
-            bot.edit_message_text(
+            await bot.edit_message_text(
                 text=text,
                 chat_id=user_id,
                 message_id=message_id,
                 reply_markup=markup
             )
         else:
-            bot.send_message(user_id, text, reply_markup=markup)
-    except telebot.apihelper.ApiTelegramException as e:
+            await bot.send_message(user_id, text, reply_markup=markup)
+    except Exception as e:
         if "message is not modified" in str(e).lower():
-            print("[TG] Сообщение не изменилось — пропускаем")
+            logging.info("[TG] Сообщение не изменилось")
         else:
-            print(f"[TG EDIT ERROR] {e}")
-            # На всякий случай новое сообщение
-            bot.send_message(user_id, text, reply_markup=markup)
+            logging.error(f"[TG ERROR] {e}")
+            await bot.send_message(user_id, text, reply_markup=markup)
 
-
-@bot.chat_join_request_handler()
-def on_join_request(join_request: ChatJoinRequest):
-    user_id = join_request.from_user.id
-    username = join_request.from_user.username or join_request.from_user.first_name
-    print(f"[JOIN REQUEST] @{username} (id={user_id})")
+@dp.chat_join_request()
+async def on_join_request(join: types.ChatJoinRequest):
+    user_id = join.from_user.id
+    username = join.from_user.username or join.from_user.first_name
+    logging.info(f"[JOIN REQUEST] @{username} (id={user_id})")
     
-    send_welcome_with_check(user_id)
+    await send_prompt(user_id)
 
-
-@bot.callback_query_handler(func=lambda call: call.data.startswith('check_'))
-def on_check_button(call):
-    user_id = int(call.data.split('_')[1])
-    print(f"[CHECK PRESSED] user={user_id}")
+@dp.callback_query(lambda c: c.data.startswith('check_'))
+async def on_check(callback: types.CallbackQuery):
+    user_id = int(callback.data.split('_')[1])
+    logging.info(f"[CHECK PRESSED] user={user_id}")
     
-    send_welcome_with_check(user_id, call.message.message_id)
+    await send_prompt(user_id, callback.message.message_id)
     
-    if is_subscribed(user_id):
-        bot.answer_callback_query(call.id, "Подписка пройдена! Добро пожаловать.", show_alert=True)
+    if await is_subscribed(user_id):
+        await callback.answer("Подписка пройдена! Заходи.", show_alert=True)
     else:
-        bot.answer_callback_query(call.id, "Ещё не все каналы подписаны. Подпишитесь и попробуйте снова.", show_alert=True)
+        await callback.answer("Ещё не все каналы. Подпишись и повтори.", show_alert=True)
 
+async def main():
+    logging.info("Привет-бот запущен — Flyer + async")
+    await bot.delete_webhook(drop_pending_updates=True)
+    await dp.start_polling(bot, allowed_updates=['chat_join_request', 'callback_query'])
 
 if __name__ == '__main__':
-    print("Привет-бот запущен — Flyer check + приветствие")
-    bot.infinity_polling(
-        allowed_updates=['chat_join_request', 'callback_query'],
-        timeout=20
-    )
+    asyncio.run(main())
